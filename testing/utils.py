@@ -8,6 +8,7 @@ sys.path.append('..')
 from pytrade.proxy import Proxy
 from pytrade import *
 
+import time
 import threading
 import requests
 import socketserver
@@ -69,7 +70,8 @@ def s(request,server):
     pro=Proxy.from_friendly_args(8765,logging=request.module.logging if 'logging' in module_items else Verbose,**args)
     proxy_thread=threading.Thread(target=pro.run)
     proxy_thread.start()
-
+    time.sleep(.5)
+    
     s=requests.session()
     s.proxies={'http':'http://127.0.0.1:8765','https':'http://127.0.0.1:8765'}
 
@@ -80,6 +82,7 @@ def s(request,server):
         pro.ioloop.add_callback(pro.ioloop.stop)
         proxy_thread.join()
         pro.server.stop()
+        time.sleep(.5)
 
     request.addfinalizer(fin)
     return s
