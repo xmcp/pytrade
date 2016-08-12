@@ -1,6 +1,10 @@
 # PY♂Trade
 紧张刺激的 Python HTTP(S) 代理库
 
+![Py3](https://img.shields.io/badge/python-3.x-blue.svg)
+[![Build Status](https://travis-ci.org/xmcp/pytrade.svg?branch=master)](https://travis-ci.org/xmcp/pytrade)
+[![Coverage Status](https://coveralls.io/repos/github/xmcp/pytrade/badge.svg?branch=master)](https://coveralls.io/github/xmcp/pytrade?branch=master)
+
 ## 说明
 - 全部在 Python 3.x 上开发并测试
 - `pip install -r requirements.txt`

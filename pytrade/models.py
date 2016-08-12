@@ -231,7 +231,7 @@ class PyError(PyBase):
 
 
 class Response:
-    class _DefultRes:
+    class _DefaultRes:
         import requests.models
 
         code=200
@@ -242,7 +242,7 @@ class Response:
 
     def __init__(self,base:Res=None,status=None,headers=None,body=None,keep_encoding=False):
         if base is None:
-            base=self._DefultRes()
+            base=self._DefaultRes()
 
         self.status=status if status is not None else (base.code, base.reason)
         self.headers=headers if headers is not None else base.headers
