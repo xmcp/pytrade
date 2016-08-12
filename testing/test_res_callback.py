@@ -13,10 +13,11 @@ def on_request(req,py):
     return Go
 
 def on_response(req,res,py):
-    assert not req.url.endswith('?test-pass')
+    if req.url.endswith('?test-pass'):
+        return Response(body='!!failed!!')
 
     if req.test_flag:
-        return Response(body=b'good')
+        return Response(body='good')
 
     if req.url.endswith('?test-halt'):
         return Halt
@@ -96,7 +97,8 @@ def test_py(s):
     assert res.text=='tampered' and res.headers.get('x-foo')=='bar' and res.reason.lower()=='hello'
 
 def test_pass(s):
-    s.get(SERVER+'?test-pass')
+    res=s.get(SERVER+'?test-pass')
+    assert res.status_code==200 and '!!failed!!' not in res.text
 
 def test_res_decode(s):
     res1=requests.get(SERVER+'?test-decode')
