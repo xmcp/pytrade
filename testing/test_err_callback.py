@@ -35,7 +35,7 @@ def test_res_throw(s):
     assert res.headers['x-foo']=='bar' and res.text=='catched'
 
 def test_con_throw(s):
-    with pytest.raises(requests.exceptions.SSLError):
+    with pytest.raises(requests.exceptions.RequestException):
         s.get('https://example.com')
 
 def test_drop_connection(s):

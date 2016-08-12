@@ -8,7 +8,6 @@ sys.path.append('..')
 from pytrade.proxy import Proxy
 from pytrade import *
 
-import time
 import threading
 import requests
 import socketserver
@@ -41,9 +40,9 @@ class TestSeverHandler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
-@pytest.fixture(scope='session')
+@pytest.fixture(scope='module')
 def server(request):
-    httpd=MultithreadServer(('0.0.0.0',28567),TestSeverHandler)
+    httpd=MultithreadServer(('127.0.0.1',8567),TestSeverHandler)
     httpd.handle_error=lambda *_: None #suppress "ValueError: I/O operation on closed file"
     server_thread=threading.Thread(target=httpd.serve_forever)
     server_thread.start()
@@ -67,11 +66,10 @@ def s(request,server):
     if 'on_error' in module_items:
         args['error']=request.module.on_error
 
-    pro=Proxy.from_friendly_args(8765,logging=request.module.logging if 'logging' in module_items else Verbose,**args)
+    pro=Proxy.from_friendly_args(8765,logging=request.module.logging if 'logging' in module_items else Normal,**args)
     proxy_thread=threading.Thread(target=pro.run)
     proxy_thread.start()
-    time.sleep(.5)
-    
+
     s=requests.session()
     s.proxies={'http':'http://127.0.0.1:8765','https':'http://127.0.0.1:8765'}
 
@@ -82,9 +80,8 @@ def s(request,server):
         pro.ioloop.add_callback(pro.ioloop.stop)
         proxy_thread.join()
         pro.server.stop()
-        time.sleep(.5)
 
     request.addfinalizer(fin)
     return s
 
-SERVER='http://127.0.0.1:28567/'
+SERVER='http://127.0.0.1:8567/'
