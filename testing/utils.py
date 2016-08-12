@@ -42,7 +42,7 @@ class TestSeverHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture(scope='session')
 def server(request):
-    httpd=MultithreadServer(('127.0.0.1',8567),TestSeverHandler)
+    httpd=MultithreadServer(('0.0.0.0',28567),TestSeverHandler)
     httpd.handle_error=lambda *_: None #suppress "ValueError: I/O operation on closed file"
     server_thread=threading.Thread(target=httpd.serve_forever)
     server_thread.start()
