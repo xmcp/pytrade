@@ -66,7 +66,7 @@ def s(request,server):
     if 'on_error' in module_items:
         args['error']=request.module.on_error
 
-    pro=Proxy.from_friendly_args(8765,logging=request.module.logging if 'logging' in module_items else Normal,**args)
+    pro=Proxy.from_friendly_args(8765,logging=request.module.logging if 'logging' in module_items else Verbose,**args)
     proxy_thread=threading.Thread(target=pro.run)
     proxy_thread.start()
 
