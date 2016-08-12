@@ -88,4 +88,7 @@ proxy(port=8765, request=Halt, connect=Halt, logging=Verbose)
 ```
 ……
 
-更复杂的示例详见 `example/function_test.py` 文件`
+更复杂的示例详见 `example/function_test.py` 文件
+
+## 简易流程图
+![](https://cloud.githubusercontent.com/assets/6646473/17587791/ead3b4ca-5ffc-11e6-8ac0-622aa2affd30.png)
