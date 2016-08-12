@@ -142,7 +142,7 @@ class PyBase:
         self.flush=self._tamper_fn(flush)
 
         if pyi.verbose<=Silent:
-            self.log=lambda:None
+            self.log=lambda *_:None
         else:
             self.log=run_once(self._log)
 
@@ -240,16 +240,20 @@ class Response:
         _content_bkp=[b'']
         binary=b''
 
-    def __init__(self,base:Res=None,status=None,headers=None,body=None):
+    def __init__(self,base:Res=None,status=None,headers=None,body=None,keep_encoding=False):
         if base is None:
             base=self._DefultRes()
 
         self.status=status if status is not None else (base.code, base.reason)
         self.headers=headers if headers is not None else base.headers
         self.status=_parse_status(self.status)
-        self.body=body if body is not None else base.binary
 
         if 'content-length' in self.headers: #todo: make sure it's case insensitive
             self.headers['content-length']=len(self.body)
-        if 'content-encoding' in self.headers:
-            del self.headers['content-encoding']
+
+        if body is not None:
+            self.body=body
+            if not keep_encoding and 'content-encoding' in self.headers:
+                del self.headers['content-encoding']
+        else:
+            self.body=base.binary

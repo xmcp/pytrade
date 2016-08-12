@@ -91,7 +91,16 @@ def tornado_fetcher(pyi, req, callback, setstatus, addheader, putdata, finish, f
 
     except Exception as e:
         pyerr=PyError(req, pyi, e, setstatus, addheader, putdata, finish, flush)
-        pyi.err_callback(req,e,pyerr)
+        cmd=pyi.err_callback(req,e,pyerr)
+        if isinstance(cmd,Response):
+            if pyi.verbose>=Verbose:
+                print('<-! #%4d Exception Response %s %dB %s'%\
+                    (req._count,' '.join(map(str,cmd.status)),len(cmd.body),req.url))
+
+            ioloop.add_callback(setstatus,*cmd.status)
+            for k,v in cmd.headers.items():
+                ioloop.add_callback(addheader,k,v)
+            ioloop.add_callback(putdata,cmd.body)
         if not pyerr._finished_flag:
             pyerr.finish()
 
@@ -104,36 +113,29 @@ class ProxyHandler(tornado.web.RequestHandler):
 
     @tornado.web.asynchronous
     def get(self):
-        def callback_set_status(*status):
-            self.set_status(*status)
-
-        def callback_add_header(k,v):
-            self.add_header(k, v)
-
-        def callback_write(data):
-            self.write(data)
-
-        def callback_finish(data=None):
-            self.finish(data)
-
-        def callback_flush():
-            self.flush()
-
         if 'Proxy-Connection' in self.request.headers:
             del self.request.headers['Proxy-Connection']
-
         self._headers = tornado.httputil.HTTPHeaders()
 
         req=Req(self.request.method,self.request.uri,self.request.headers,self.request.body or b'',self.application.pyinstance.counter)
-        py=PyRequest(req,self.application.pyinstance,
-                     callback_set_status,callback_add_header,callback_write,callback_finish,callback_flush)
+        py=PyRequest(req,self.application.pyinstance,self.set_status,self.add_header,self.write,self.finish,self.flush)
         if self.application.pyinstance.verbose>=Verbose:
             py.log()
         try:
             cmd=self.application.pyinstance.req_callback(req,py)
         except Exception as e:
-            pyerr=PyError(req, self.application.pyinstance, e, callback_set_status, callback_add_header, callback_write, callback_finish, callback_flush)
-            self.application.pyinstance.err_callback(req,e,pyerr)
+            pyerr=PyError(req, self.application.pyinstance, e, self.set_status, self.add_header, self.write, self.finish, self.flush)
+            cmd=self.application.pyinstance.err_callback(req,e,pyerr)
+
+            if isinstance(cmd,Response):
+                if self.application.pyinstance.verbose>=Verbose:
+                    print('<-! #%4d Exception Response %s %dB %s'%\
+                        (req._count,' '.join(map(str,cmd.status)),len(cmd.body),req.url))
+
+                self.set_status(*cmd.status)
+                for k,v in cmd.headers.items():
+                    self.add_header(k,v)
+                self.write(cmd.body)
             if not pyerr._finished_flag:
                 pyerr.finish()
             return
@@ -143,7 +145,7 @@ class ProxyHandler(tornado.web.RequestHandler):
             tornado_fetcher(
                 self.application.pyinstance, req,
                 self.application.pyinstance.res_callback if cmd==Go else None,
-                callback_set_status, callback_add_header, callback_write, callback_finish, callback_flush,
+                self.set_status, self.add_header, self.write, self.finish, self.flush,
             )
 
         elif cmd==Halt:
@@ -157,7 +159,7 @@ class ProxyHandler(tornado.web.RequestHandler):
                 print('<-F #%4d (Faked: %s %sB) %s'%(req._count,' '.join(map(str,cmd.status)),len(cmd.body),req.url))
 
             self.set_status(*cmd.status)
-            for k,v in cmd.headers:
+            for k,v in cmd.headers.items():
                 self.add_header(k,v)
             self.finish(cmd.body)
 
@@ -198,9 +200,22 @@ class ProxyHandler(tornado.web.RequestHandler):
         py=PySSL(reqssl,self.application.pyinstance)
         try:
             cmd=self.application.pyinstance.con_callback(reqssl,py)
-        except:
-            traceback.print_exc()
-            return self.finish()
+        except Exception as e:
+            pyerr=PyError(reqssl, self.application.pyinstance, e, self.set_status, self.add_header, self.write, self.finish, self.flush)
+            cmd=self.application.pyinstance.err_callback(reqssl,e,pyerr)
+
+            if isinstance(cmd,Response):
+                if self.application.pyinstance.verbose>=Verbose:
+                    print('<-! #%4d Exception Response %s %dB %s'%\
+                        (py.count,' '.join(map(str,cmd.status)),len(cmd.body),reqssl.url))
+
+                self.set_status(*cmd.status)
+                for k,v in cmd.headers.items():
+                    self.add_header(k,v)
+                self.write(cmd.body)
+            if not pyerr._finished_flag:
+                pyerr.finish()
+            return
 
         if cmd==Pass:
             if self.application.pyinstance.verbose>=Verbose:
@@ -229,26 +244,34 @@ class Proxy:
 
         self.counter=counter()
         self.verbose=verbose
+        self.port=int(port)
 
-        port=int(port)
-
-        if self.verbose>Silent:
-            print('=== Running proxy on port %d.'%port)
-
-        app=tornado.web.Application([
+        self.app=tornado.web.Application([
             (r'.*', ProxyHandler),
         ])
-        app.pyinstance=self
-        app.listen(port)
+        self.server=self.app.listen(self.port)
+        self.app.pyinstance=self
         self.ioloop=tornado.ioloop.IOLoop.instance()
+
+    @classmethod
+    def from_friendly_args(cls,port,request=Go,response=Go,error=Halt,connect=Pass,logging=Normal):
+        def normalize(callback):
+            if is_cmd(callback): #todo: do not prepare Req/Res and PY for optimization
+                return lambda *_: callback
+            else:
+                return callback
+
+        return cls(
+            port,
+            normalize(request), normalize(response), default_err_handler if error==Halt else error, normalize(connect),
+            logging
+        )
+
+    def run(self):
+        if self.verbose>Silent:
+            print('=== Running proxy on port %d.'%self.port)
         self.ioloop.start()
 
 
 def proxy(port,request=Go,response=Go,error=Halt,connect=Pass,logging=Normal):
-    def normalize(callback):
-        if is_cmd(callback): #todo: do not prepare Req/Res and PY for optimization
-            return lambda *_: callback
-        else:
-            return callback
-
-    Proxy(port,normalize(request),normalize(response),default_err_handler if error==Halt else error,normalize(connect),logging)
+    Proxy.from_friendly_args(port,request,response,error,connect,logging).run()
