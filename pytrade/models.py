@@ -210,7 +210,7 @@ class PySSL:
 
 
 class PyError(PyBase):
-    def __init__(self, req, pyi, exc, setstatus, addheader, putdata, finish, flush):
+    def __init__(self, req, pyi, exc_info, setstatus, addheader, putdata, finish, flush):
         super().__init__(
             req,pyi,
             lambda *_: pyi.ioloop.add_callback(setstatus, *_),
@@ -219,15 +219,15 @@ class PyError(PyBase):
             lambda *_: pyi.ioloop.add_callback(finish, *_),
             lambda *_: pyi.ioloop.add_callback(flush, *_)
         )
-        self._exc=exc
+        self._exc_info=exc_info
         self._verbose=pyi.verbose==Verbose
 
     def _log(self):
         print('!!! Exception: #%4d %s (%dB) %s'%(self._req._count,self._req.method,len(self._req.body),self._req.url))
         if self._verbose:
-            traceback.print_exc()
+            traceback.print_exception(*self._exc_info)
         else:
-            print('%s %s'%(type(self._exc),self._exc))
+            print('%s %s'%(type(self._exc_info[0]),self._exc_info[0]))
 
 
 class Response:

@@ -1,16 +1,16 @@
 #coding=utf-8
-
-import tornado.httpserver
 import tornado.ioloop
 import tornado.iostream
 import tornado.web
-import tornado.httpclient
 import tornado.httputil
+import tornado.gen
 
+import sys
 import socket
 import requests
-import threading
+from tornado.concurrent import run_on_executor
 from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
 
 from pytrade.const import *
 from pytrade.models import *
@@ -33,12 +33,6 @@ thread_adapter=requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=
 sess.mount('http://', thread_adapter)
 
 
-def _async(f):
-    def _real(*__,**_):
-        threading.Thread(target=f,args=__,kwargs=_).start()
-    return _real
-
-@_async
 def tornado_fetcher(pyi, req, callback, setstatus, addheader, putdata, finish, flush):
     ioloop=pyi.ioloop
     try:
@@ -90,7 +84,7 @@ def tornado_fetcher(pyi, req, callback, setstatus, addheader, putdata, finish, f
                 raise RuntimeError('bad response callback value %r'%cmd)
 
     except Exception as e:
-        pyerr=PyError(req, pyi, e, setstatus, addheader, putdata, finish, flush)
+        pyerr=PyError(req, pyi, sys.exc_info(), setstatus, addheader, putdata, finish, flush)
         cmd=pyi.err_callback(req,e,pyerr)
         if isinstance(cmd,Response):
             if pyi.verbose>=Verbose:
@@ -107,25 +101,31 @@ def tornado_fetcher(pyi, req, callback, setstatus, addheader, putdata, finish, f
 
 class ProxyHandler(tornado.web.RequestHandler):
     SUPPORTED_METHODS = ['GET', 'POST', 'HEAD', 'DELETE', 'PATCH', 'PUT', 'CONNECT']
+    executer=ThreadPoolExecutor(100)
 
     def compute_etag(self):
         return None # disable tornado Etag
 
+    def _async(self,fn,*args,**kwargs):
+        def self_remover(_,*args,**kwargs):
+            return fn(*args,**kwargs)
+        return run_on_executor(executor='executer')(self_remover)(self,*args,**kwargs)
+
     @tornado.web.asynchronous
+    @tornado.gen.coroutine
     def get(self):
         if 'Proxy-Connection' in self.request.headers:
             del self.request.headers['Proxy-Connection']
         self._headers = tornado.httputil.HTTPHeaders()
-
         req=Req(self.request.method,self.request.uri,self.request.headers,self.request.body or b'',self.application.pyinstance.counter)
         py=PyRequest(req,self.application.pyinstance,self.set_status,self.add_header,self.write,self.finish,self.flush)
         if self.application.pyinstance.verbose>=Verbose:
             py.log()
         try:
-            cmd=self.application.pyinstance.req_callback(req,py)
+            cmd=yield self._async(self.application.pyinstance.req_callback,req,py)
         except Exception as e:
-            pyerr=PyError(req, self.application.pyinstance, e, self.set_status, self.add_header, self.write, self.finish, self.flush)
-            cmd=self.application.pyinstance.err_callback(req,e,pyerr)
+            pyerr=PyError(req, self.application.pyinstance, sys.exc_info(), self.set_status, self.add_header, self.write, self.finish, self.flush)
+            cmd=yield self._async(self.application.pyinstance.err_callback,req,e,pyerr)
 
             if isinstance(cmd,Response):
                 if self.application.pyinstance.verbose>=Verbose:
@@ -142,7 +142,7 @@ class ProxyHandler(tornado.web.RequestHandler):
 
         if cmd==Go or cmd==Pass:
             assert not py._tamper_flag, 'cannot forward request when PY is tampered'
-            tornado_fetcher(
+            yield self._async(tornado_fetcher,
                 self.application.pyinstance, req,
                 self.application.pyinstance.res_callback if cmd==Go else None,
                 self.set_status, self.add_header, self.write, self.finish, self.flush,
@@ -201,7 +201,7 @@ class ProxyHandler(tornado.web.RequestHandler):
         try:
             cmd=self.application.pyinstance.con_callback(reqssl,py)
         except Exception as e:
-            pyerr=PyError(reqssl, self.application.pyinstance, e, self.set_status, self.add_header, self.write, self.finish, self.flush)
+            pyerr=PyError(reqssl, self.application.pyinstance, sys.exc_info(), self.set_status, self.add_header, self.write, self.finish, self.flush)
             cmd=self.application.pyinstance.err_callback(reqssl,e,pyerr)
 
             if isinstance(cmd,Response):
