@@ -1,0 +1,17 @@
+[ca]
+default_ca = pytrade_CA
+
+[req]
+distinguished_name  = req_dn
+default_md = sha512
+default_bits = 2048
+
+[req_dn]
+countryName_default = CN
+countryName_min     = 2
+countryName_max     = 2
+localityName_default= DO_NOT_TRUST
+organizationName_default = pytrade
+
+[clientauth]
+extendedKeyUsage    = clientAuth

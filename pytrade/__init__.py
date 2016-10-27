@@ -3,7 +3,7 @@
 from pytrade.proxy import *
 
 __all__=[
-    'proxy',
+    'proxy', 'fallback',
     'Pass', 'Go', 'Halt', 'Response',
     'Silent', 'Normal', 'Verbose',
 ]

@@ -14,9 +14,6 @@ def on_request(req,py):
         assert isinstance(req.port,int)
         return Response(body='ok')
 
-    if req.url.endswith('?test-err-py'):
-        raise RuntimeError()
-
     return Go
 
 def on_response(req,res,py):
@@ -106,12 +103,6 @@ def on_connect(req,py):
 
     return Pass
 
-def on_error(req,res,py):
-    if req.url.endswith('?test-err-py'):
-        assert req.test_count==py.count
-        py.log()
-        return Response(body='error check ok')
-
 def test_req_py(s):
     res=s.get(SERVER+'?test-req-py')
     assert res.status_code==200 and res.text=='ok'
@@ -123,9 +114,6 @@ def test_res_py(s):
 def test_con_py(s):
     s.get('https://example.com')
 
-def test_err_py(s):
-    res=s.get(SERVER+'?test-err-py')
-    assert res.text=='error check ok'
 
 @pytest.mark.parametrize('ind',[1,2,3,4])
 def test_res_status(s,ind):

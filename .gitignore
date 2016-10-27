@@ -2,3 +2,4 @@
 *.pyc
 __pycache__/
 /testing/.cache/
+/pytrade/_generated_keys/

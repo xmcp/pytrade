@@ -7,40 +7,42 @@ import tornado.gen
 
 import sys
 import socket
-import requests
+import traceback
+
 from tornado.concurrent import run_on_executor
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 
-from pytrade.const import *
-from pytrade.models import *
-
-
-def is_cmd(x):
-    return x==Pass or x==Go or x==Halt or isinstance(x,Response)
-
-
-def default_err_handler(req,e,py:PyError):
-    py.log()
-    py.set_status(500)
-    py.add_header('content-type','text/plain')
-    py.finish('Internal server error:\n'+str(e))
-
-
-sess=requests.Session()
-sess.trust_env=False #disable original proxy
-thread_adapter=requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100)
-sess.mount('http://', thread_adapter)
+from .const import *
+from .models import *
+from . import https_wrapper
 
 
 def tornado_fetcher(pyi, req, callback, setstatus, addheader, putdata, finish, flush):
     ioloop=pyi.ioloop
     try:
-        with closing(sess.request(
-                req.method, req.url, headers=req.headers, data=req.body,
-                stream=True, allow_redirects=False, timeout=30,
-            )) as r:
+        the_response=sess.request(
+            req.method, req.url, headers=req.headers, data=req.body,
+            stream=True, allow_redirects=False, timeout=30,
+        )
+    except Exception as e:
+        pyerr = PyError(req, pyi, sys.exc_info(), setstatus, addheader, putdata, finish, flush)
+        cmd = pyi.err_callback(req, e, pyerr)
+        if isinstance(cmd, Response):
+            if pyi.verbose >= Verbose:
+                print('<-! #%4d Exception Response %s %dB %s' % \
+                      (req._count, ' '.join(map(str, cmd.status)), len(cmd.body), req.url))
 
+            ioloop.add_callback(setstatus, *cmd.status)
+            for k, v in cmd.headers.items():
+                ioloop.add_callback(addheader, k, v)
+            ioloop.add_callback(putdata, cmd.body)
+        if not pyerr._finished_flag:
+            pyerr.finish()
+        return
+
+    try:
+        with closing(the_response) as r:
             res=Res(r)
             py=PyResponse(req,res,pyi,setstatus,addheader,putdata,finish,flush)
             cmd=callback(req,res,py) if callback is not None else Go
@@ -85,16 +87,7 @@ def tornado_fetcher(pyi, req, callback, setstatus, addheader, putdata, finish, f
 
     except Exception as e:
         pyerr=PyError(req, pyi, sys.exc_info(), setstatus, addheader, putdata, finish, flush)
-        cmd=pyi.err_callback(req,e,pyerr)
-        if isinstance(cmd,Response):
-            if pyi.verbose>=Verbose:
-                print('<-! #%4d Exception Response %s %dB %s'%\
-                    (req._count,' '.join(map(str,cmd.status)),len(cmd.body),req.url))
-
-            ioloop.add_callback(setstatus,*cmd.status)
-            for k,v in cmd.headers.items():
-                ioloop.add_callback(addheader,k,v)
-            ioloop.add_callback(putdata,cmd.body)
+        default_err_handler(req,e,pyerr)
         if not pyerr._finished_flag:
             pyerr.finish()
 
@@ -125,17 +118,7 @@ class ProxyHandler(tornado.web.RequestHandler):
             cmd=yield self._async(self.application.pyinstance.req_callback,req,py)
         except Exception as e:
             pyerr=PyError(req, self.application.pyinstance, sys.exc_info(), self.set_status, self.add_header, self.write, self.finish, self.flush)
-            cmd=yield self._async(self.application.pyinstance.err_callback,req,e,pyerr)
-
-            if isinstance(cmd,Response):
-                if self.application.pyinstance.verbose>=Verbose:
-                    print('<-! #%4d Exception Response %s %dB %s'%\
-                        (req._count,' '.join(map(str,cmd.status)),len(cmd.body),req.url))
-
-                self.set_status(*cmd.status)
-                for k,v in cmd.headers.items():
-                    self.add_header(k,v)
-                self.write(cmd.body)
+            yield self._async(default_err_handler,req,e,pyerr)
             if not pyerr._finished_flag:
                 pyerr.finish()
             return
@@ -202,17 +185,7 @@ class ProxyHandler(tornado.web.RequestHandler):
             cmd=self.application.pyinstance.con_callback(reqssl,py)
         except Exception as e:
             pyerr=PyError(reqssl, self.application.pyinstance, sys.exc_info(), self.set_status, self.add_header, self.write, self.finish, self.flush)
-            cmd=self.application.pyinstance.err_callback(reqssl,e,pyerr)
-
-            if isinstance(cmd,Response):
-                if self.application.pyinstance.verbose>=Verbose:
-                    print('<-! #%4d Exception Response %s %dB %s'%\
-                        (py.count,' '.join(map(str,cmd.status)),len(cmd.body),reqssl.url))
-
-                self.set_status(*cmd.status)
-                for k,v in cmd.headers.items():
-                    self.add_header(k,v)
-                self.write(cmd.body)
+            default_err_handler(reqssl,e,pyerr)
             if not pyerr._finished_flag:
                 pyerr.finish()
             return
@@ -220,11 +193,15 @@ class ProxyHandler(tornado.web.RequestHandler):
         if cmd==Pass:
             if self.application.pyinstance.verbose>=Verbose:
                 py.log()
-            upstream = tornado.iostream.IOStream(socket.socket())
+            upstream=tornado.iostream.IOStream(socket.socket())
             upstream.connect((reqssl.host, reqssl.port), start_tunnel)
 
         elif cmd==Go:
-            raise NotImplementedError #todo: implement mitm later
+            if self.application.pyinstance.verbose>=Verbose:
+                py.log()
+                print('*** HTTPS MITM attacking activated')
+            upstream=tornado.iostream.IOStream(socket.socket())
+            upstream.connect(('127.0.0.1', https_wrapper.create_wrapper(host)), start_tunnel)
 
         elif cmd==Halt:
             if self.application.pyinstance.verbose>=Verbose:
@@ -252,6 +229,9 @@ class Proxy:
         self.server=self.app.listen(self.port)
         self.app.pyinstance=self
         self.ioloop=tornado.ioloop.IOLoop.instance()
+
+        https_wrapper.setup(self,verbose)
+
 
     @classmethod
     def from_friendly_args(cls,port,request=Go,response=Go,error=Halt,connect=Pass,logging=Normal):
