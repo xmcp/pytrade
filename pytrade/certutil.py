@@ -35,8 +35,7 @@ def get_openssl():
         if not p[3] and not p[2]: # errcode==0 and stderr==b''
             print(' *  OpenSSL executable found at %s: %s'%(path,popen_fulloutput(p).rstrip()))
             return path
-    raise RuntimeError('no openssl bin')
-OBIN=get_openssl()
+    raise RuntimeError('No OpenSSL binary found: HTTPS MITM is disabled.')
 
 if not os.path.exists('ssl_stuff/serial'):
     with open('ssl_stuff/serial','w') as f:
@@ -55,8 +54,8 @@ class CertManager(object):
         self.ca_crt = self.normpath(conf.ca_crt_file)
         self.ca_ser = self.normpath(conf.ca_serial_file)
         self.ca_cnf = self.normpath(conf.ca_openssl_config)
-        self.obin = OBIN
         self.validity_days = int(conf.validity_days)
+        self.obin = None
 
         self.prepare()
         super(CertManager, self).__init__()
@@ -80,6 +79,9 @@ class CertManager(object):
         return domain, domain.replace('*', 'wildcard')
 
     def generate(self, domain, force=False):
+        if self.obin is None:
+            self.obin=get_openssl()
+    
         domain, fdomain = self.sanitize_domain(domain)
 
         if self.check_cert(domain) and not force:

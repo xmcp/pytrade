@@ -3,3 +3,5 @@
 __pycache__/
 /testing/.cache/
 /pytrade/_generated_keys/
+/dist/
+/*.egg-info/

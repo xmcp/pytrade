@@ -35,10 +35,7 @@ def fallback(alternative):
             except Exception as e:
                 print('*** Exception (suppressed by fallback): #%4d %s (%dB) %s'%(req._count, req.method, len(req.body), req.url))
                 exc_info=sys.exc_info()
-                if verbose_:
-                    traceback.print_exception(*exc_info)
-                else:
-                    print('%s %s'%(type(exc_info[0]),exc_info[0]))
+                traceback.print_exception(*exc_info)
                 return alternative
             else:
                 if cmd is None:
@@ -46,8 +43,7 @@ def fallback(alternative):
                 elif is_cmd(cmd):
                     return cmd
                 else:
-                    if verbose_:
-                        print('*** Value fallbacked: %r -> %r'%(cmd,alternative))
+                    print('*** Value fallbacked: %r -> %r'%(cmd,alternative))
                     return alternative
         return call
     return decorator
